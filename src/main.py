@@ -156,7 +156,7 @@ def main():
                     try:
                         original_content = index_file_path.read_text(encoding='utf-8')
                         # New logic for adding #index tag
-                        if not re.search(r'\b#index\b', original_content):
+                        if not "#index" in original_content: 
                             logger.info(f"Tagging {index_file_path.name} with #index.")
                             
                             content_lines = original_content.splitlines(True) # Keep line endings
