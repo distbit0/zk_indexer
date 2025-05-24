@@ -122,30 +122,73 @@ def main():
                     notes_for_unindexed_md.remove("unindexed")
                     logger.info("Removed 'unindexed' from the list of notes for unindexed.md.")
                 
-                sorted_notes_for_unindexed = sorted(list(notes_for_unindexed_md))
-                logger.info(f"Found {len(sorted_notes_for_unindexed)} notes to list in unindexed.md.")
-                logger.debug(f"Notes for unindexed.md: {sorted_notes_for_unindexed}")
-
-                # Construct content for unindexed.md
-                unindexed_content = "\n".join([f"[[{name}]]" for name in sorted_notes_for_unindexed])
-                
                 unindexed_md_path = zk_path / "unindexed.md"
+                final_content_lines = []
+                kept_notes_from_existing_file = set()
+
+                if unindexed_md_path.exists():
+                    logger.debug(f"Reading existing {unindexed_md_path} to preserve content.")
+                    try:
+                        existing_lines = unindexed_md_path.read_text(encoding='utf-8').splitlines()
+                        for line_num, line_content in enumerate(existing_lines):
+                            match = re.fullmatch(r'\s*\[\[\s*([^]]+?)\s*\]\]\s*', line_content)
+                            
+                            if match:
+                                note_name_in_line = normalize_note_name(match.group(1))
+                                if note_name_in_line in notes_for_unindexed_md:
+                                    final_content_lines.append(line_content) # Keep original line
+                                    kept_notes_from_existing_file.add(note_name_in_line)
+                                    logger.debug(f"Keeping line {line_num+1} (note '{note_name_in_line}') from {unindexed_md_path.name}: '{line_content}'")
+                                else:
+                                    logger.info(f"Note '{note_name_in_line}' from line {line_num+1} of {unindexed_md_path.name} ('{line_content}') is no longer unindexed or does not exist. Removing this line.")
+                            else:
+                                # Line does not match the expected [[note]] format. Preserve it.
+                                final_content_lines.append(line_content)
+                                logger.debug(f"Preserving non-note line {line_num+1} from {unindexed_md_path.name}: '{line_content}'")
+                    except Exception as e:
+                        logger.error(f"Error reading or parsing {unindexed_md_path.name}: {e}. Content may be rebuilt.")
+                        final_content_lines = [] 
+                        kept_notes_from_existing_file = set()
+
+                newly_unindexed_notes_to_add = sorted(list(notes_for_unindexed_md - kept_notes_from_existing_file))
+
+                if newly_unindexed_notes_to_add:
+                    logger.info(f"Adding {len(newly_unindexed_notes_to_add)} new unindexed note(s) to {unindexed_md_path.name}.")
+                    for note_name in newly_unindexed_notes_to_add:
+                        new_line_to_add = f"[[{note_name}]]"
+                        final_content_lines.append(new_line_to_add)
+                        logger.debug(f"Appending new unindexed note to content: {new_line_to_add}")
+                
+                while final_content_lines and final_content_lines[-1].strip() == "":
+                    final_content_lines.pop()
+                
+                if final_content_lines:
+                    new_unindexed_file_content = "\n".join(final_content_lines) + "\n"
+                else:
+                    new_unindexed_file_content = ""
+
                 try:
-                    write_needed = False 
+                    perform_write = False
                     if unindexed_md_path.exists():
-                        current_content_on_disk = unindexed_md_path.read_text(encoding='utf-8')
-                        if current_content_on_disk != unindexed_content:
-                            write_needed = True
-                    else: # File does not exist, so needs to be written
-                        write_needed = True
-                    
-                    if write_needed:
-                        unindexed_md_path.write_text(unindexed_content, encoding='utf-8')
-                        logger.info(f"Successfully wrote/updated {unindexed_md_path}")
-                    else:
-                        logger.info(f"Content of {unindexed_md_path} is already up-to-date. No write needed.")
+                        current_disk_content = unindexed_md_path.read_text(encoding='utf-8')
+                        if current_disk_content != new_unindexed_file_content:
+                            perform_write = True
+                            logger.info(f"Content of {unindexed_md_path.name} has changed. Update needed.")
+                    else: # File does not exist
+                        if new_unindexed_file_content: # Only create if there's something to write
+                            perform_write = True
+                            logger.info(f"{unindexed_md_path.name} does not exist and has content. Creating.")
+                        
+                    if perform_write:
+                        unindexed_md_path.write_text(new_unindexed_file_content, encoding='utf-8')
+                        logger.info(f"Successfully wrote/updated {unindexed_md_path.name}")
+                    elif not unindexed_md_path.exists() and not new_unindexed_file_content:
+                        logger.info(f"{unindexed_md_path.name} does not exist and no unindexed notes. File not created.")
+                    else: # File exists and content is same, or file doesn't exist and no content
+                        logger.info(f"No changes needed for {unindexed_md_path.name}.")
+
                 except Exception as e:
-                    logger.error(f"Error processing {unindexed_md_path}: {e}")
+                    logger.error(f"Error writing to {unindexed_md_path.name}: {e}")
             else:
                 logger.info("No notes found in the Zettelkasten to process for unindexed.md.")
 
