@@ -265,16 +265,45 @@ def _write_unindexed_md_if_needed(
 
 
 def _append_lines_to_file(file_path: Path, lines_to_append: list[str]):
-    """Appends a list of lines to the specified file."""
+    """Appends a list of lines to the specified file, ensuring at least two newlines before the new text."""
     if not lines_to_append:
         logger.debug(f"No lines to append to {file_path}. Skipping.")
         return
 
+    num_newlines_to_prefix = 0
+    if file_path.exists() and file_path.stat().st_size > 0:
+        try:
+            with file_path.open("rb") as f:  # Open in binary for seek and read last bytes
+                f.seek(0, 2)  # Go to end of file
+                file_size = f.tell()
+                read_size = min(2, file_size) # Read at most last 2 bytes
+                
+                content_ends_with = "" # Default if file is too small or only contains partial char
+                if read_size > 0:
+                    f.seek(file_size - read_size)
+                    last_bytes = f.read(read_size)
+                    content_ends_with = last_bytes.decode("utf-8", errors="ignore")
+
+                if content_ends_with.endswith("\n\n"):
+                    num_newlines_to_prefix = 0
+                elif content_ends_with.endswith("\n"):
+                    num_newlines_to_prefix = 1
+                else:  # Does not end with any newline, or file was smaller than 1 char
+                    num_newlines_to_prefix = 2
+        except Exception as e:
+            logger.warning(f"Could not read end of file {file_path} to check newlines: {e}. Assuming 2 prefix newlines needed.")
+            num_newlines_to_prefix = 2 # Fallback on error
+    else:  # File does not exist or is empty
+        num_newlines_to_prefix = 2
+
     try:
         with file_path.open("a", encoding="utf-8") as f:
+            if num_newlines_to_prefix > 0:
+                f.write("\n" * num_newlines_to_prefix)
+            
             for line in lines_to_append:
-                f.write(line + "\n") # Ensure newline character
-        logger.info(f"Appended {len(lines_to_append)} lines to {file_path}")
+                f.write(line + "\n")  # Each new item on a new line
+        logger.info(f"Appended {len(lines_to_append)} lines to {file_path} (prefixed with {num_newlines_to_prefix} newline(s) if needed).")
     except IOError as e:
         logger.error(f"Error appending to {file_path}: {e}")
 
