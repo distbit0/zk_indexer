@@ -280,7 +280,7 @@ def _append_lines_to_file(file_path: Path, lines_to_append: list[str]):
 
 
 def _update_unindexed_md_file(unindexed_md_path: Path, current_unindexed_normalized: set[str], all_notes_data: dict[str, str]):
-    """Coordinates the update of the unindexed.md file and appends additions to temp.md."""
+    """Coordinates the update of the unindexed.md file and appends additions to temp index.md."""
     initial_file_existed = unindexed_md_path.exists()
 
     preserved_lines, kept_normalized_notes, file_had_removals = \
@@ -298,7 +298,7 @@ def _update_unindexed_md_file(unindexed_md_path: Path, current_unindexed_normali
     )
 
     if newly_added_lines_for_temp_md: # Check if there are any lines to append
-        temp_md_path = unindexed_md_path.parent / "temp.md"
+        temp_md_path = unindexed_md_path.parent / "temp index.md"
         _append_lines_to_file(temp_md_path, newly_added_lines_for_temp_md)
 
 
