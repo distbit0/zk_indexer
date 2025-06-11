@@ -146,123 +146,49 @@ def _determine_unindexed_notes(all_normalized_note_names: set[str], linked_notes
     logger.info(f"{len(notes_for_unindexed_md)} note(s) determined to be unindexed.")
     return notes_for_unindexed_md
 
-def _parse_existing_unindexed_file(unindexed_md_path: Path, current_unindexed_normalized: set[str]) -> tuple[list[str], set[str], bool]:
+def _parse_existing_unindexed_file(current_unindexed_normalized: set[str]) -> tuple[list[str], set[str]]:
     """Reads existing unindexed.md, preserves relevant lines and non-note content."""
     preserved_lines: list[str] = []
     kept_normalized_notes: set[str] = set()
-    file_had_removals = False
 
-    if not unindexed_md_path.exists():
-        logger.debug(f"{unindexed_md_path.name} does not exist. No existing content to parse.")
-        return preserved_lines, kept_normalized_notes, file_had_removals
-
-    logger.debug(f"Reading existing {unindexed_md_path.name} to preserve content.")
-    try:
-        existing_lines = unindexed_md_path.read_text(encoding='utf-8').splitlines()
-        for line_num, line_content in enumerate(existing_lines):
-            match = re.fullmatch(r'\s*\[\[\s*([^]]+?)\s*\]\]\s*', line_content)
-            if match:
-                original_text_in_link = match.group(1).strip()
-                note_name_in_line_normalized = _normalize_text_for_linking(original_text_in_link)
-                
-                if note_name_in_line_normalized in current_unindexed_normalized:
-                    preserved_lines.append(line_content)
-                    kept_normalized_notes.add(note_name_in_line_normalized)
-                    logger.debug(f"Keeping line {line_num+1} (normalized: '{note_name_in_line_normalized}', original: '{original_text_in_link}') from {unindexed_md_path.name}: '{line_content}'")
-                else:
-                    logger.info(f"Note (normalized: '{note_name_in_line_normalized}', original: '{original_text_in_link}') from line {line_num+1} of {unindexed_md_path.name} ('{line_content}') is no longer unindexed. Removing this line.")
-                    file_had_removals = True
-            else:
+    existing_lines = ""
+    for line_num, line_content in enumerate(existing_lines):
+        match = re.fullmatch(r'\s*\[\[\s*([^]]+?)\s*\]\]\s*', line_content)
+        if match:
+            original_text_in_link = match.group(1).strip()
+            note_name_in_line_normalized = _normalize_text_for_linking(original_text_in_link)
+            
+            if note_name_in_line_normalized in current_unindexed_normalized:
                 preserved_lines.append(line_content)
-                logger.debug(f"Preserving non-note line {line_num+1} from {unindexed_md_path.name}: '{line_content}'")
-    except Exception as e:
-        logger.error(f"Error reading or parsing {unindexed_md_path.name}: {e}. Assuming no lines preserved.")
-        return [], set(), True # Assume change as we can't preserve
+                kept_normalized_notes.add(note_name_in_line_normalized)
+        else:
+            preserved_lines.append(line_content)
     
-    return preserved_lines, kept_normalized_notes, file_had_removals
+    return preserved_lines, kept_normalized_notes
 
 def _prepare_final_unindexed_content(
     preserved_lines: list[str],
     kept_normalized_notes: set[str],
     current_unindexed_normalized: set[str],
     all_notes_data: dict[str, str]
-) -> tuple[list[str], bool, list[str]]:
+) -> list[str]:
     """Prepares the final list of lines for unindexed.md, adding new notes, and returns added lines."""
-    final_content_lines = list(preserved_lines) # Start with a copy
-    file_had_additions = False
     added_lines_content: list[str] = []
 
     newly_unindexed_to_add_normalized = sorted(list(current_unindexed_normalized - kept_normalized_notes))
 
     if newly_unindexed_to_add_normalized:
         logger.info(f"Adding {len(newly_unindexed_to_add_normalized)} new unindexed note(s).")
-        file_had_additions = True
         for normalized_note_name_to_add in newly_unindexed_to_add_normalized:
             original_stem_to_link = all_notes_data.get(normalized_note_name_to_add)
             if original_stem_to_link:
                 new_line_to_add = f"[[{original_stem_to_link}]]"
-                final_content_lines.append(new_line_to_add)
                 added_lines_content.append(new_line_to_add)
                 logger.debug(f"Appending new unindexed note (normalized: '{normalized_note_name_to_add}', original: '{original_stem_to_link}') to content: {new_line_to_add}")
             else:
                 logger.error(f"Could not find original stem for normalized note name '{normalized_note_name_to_add}'. Skipping addition.")
 
-    return final_content_lines, file_had_additions, added_lines_content
-
-def _write_unindexed_md_if_needed(
-    unindexed_md_path: Path, 
-    final_content_lines: list[str], 
-    initial_file_existed: bool,
-    file_had_removals: bool, 
-    file_had_additions: bool
-):
-    """Writes the final content to unindexed.md if changes were made or file is new."""
-    # Determine if a write is potentially needed
-    # A write is needed if: file is new and has content, or file existed and had additions/removals.
-    potential_write_needed = (not initial_file_existed and final_content_lines) or \
-                             (initial_file_existed and (file_had_additions or file_had_removals))
-
-    # Prepare final string content
-    # Clean up trailing empty lines
-    processed_lines = list(final_content_lines)
-    while processed_lines and processed_lines[-1].strip() == "":
-        processed_lines.pop()
-    # Add a single newline at the end if there's content
-    if processed_lines:
-        processed_lines.append("")
-    new_content_str = "\n".join(processed_lines)
-
-    # If the file existed, we need to compare with its original content to be absolutely sure a change occurred,
-    # especially if only non-wikilink lines were present or formatting changes are the only difference.
-    actual_change_occurred = False
-    if initial_file_existed:
-        try:
-            original_file_content = unindexed_md_path.read_text(encoding='utf-8')
-            if original_file_content != new_content_str:
-                actual_change_occurred = True
-                logger.info(f"Content of {unindexed_md_path.name} has changed. Update needed.")
-            else:
-                # Even if additions/removals were flagged, if final content is same, no actual change
-                logger.info(f"No effective changes to content of {unindexed_md_path.name} after processing. File not written.")
-        except Exception as e:
-            logger.warning(f"Could not re-read {unindexed_md_path.name} for final comparison: {e}. Assuming change if write was potentially needed.")
-            actual_change_occurred = potential_write_needed # Be cautious
-    elif final_content_lines: # File did not exist, but now we have content for it
-        actual_change_occurred = True
-        logger.info(f"{unindexed_md_path.name} will be created with new content.")
-    
-    if actual_change_occurred:
-        try:
-            unindexed_md_path.write_text(new_content_str, encoding='utf-8')
-            logger.info(f"Successfully wrote/updated {unindexed_md_path.name}.")
-        except Exception as e:
-            logger.error(f"Error writing to {unindexed_md_path.name}: {e}")
-    elif not initial_file_existed and not final_content_lines:
-        logger.info(f"{unindexed_md_path.name} does not exist and no unindexed notes to add. File not created.")
-    elif initial_file_existed and not actual_change_occurred:
-        # This case is covered by the logger message inside the 'if initial_file_existed:' block
-        pass 
-
+    return added_lines_content
 
 def _append_lines_to_file(file_path: Path, lines_to_append: list[str]):
     """Appends a list of lines to the specified file, ensuring at least two newlines before the new text."""
@@ -310,21 +236,12 @@ def _append_lines_to_file(file_path: Path, lines_to_append: list[str]):
 
 def _update_unindexed_md_file(unindexed_md_path: Path, current_unindexed_normalized: set[str], all_notes_data: dict[str, str]):
     """Coordinates the update of the unindexed.md file and appends additions to temp index.md."""
-    initial_file_existed = unindexed_md_path.exists()
 
-    preserved_lines, kept_normalized_notes, file_had_removals = \
-        _parse_existing_unindexed_file(unindexed_md_path, current_unindexed_normalized)
+    preserved_lines, kept_normalized_notes = \
+        _parse_existing_unindexed_file(current_unindexed_normalized)
 
-    final_content_lines, file_had_additions, newly_added_lines_for_temp_md = \
+    newly_added_lines_for_temp_md = \
         _prepare_final_unindexed_content(preserved_lines, kept_normalized_notes, current_unindexed_normalized, all_notes_data)
-
-    _write_unindexed_md_if_needed(
-        unindexed_md_path,
-        final_content_lines,
-        initial_file_existed,
-        file_had_removals,
-        file_had_additions
-    )
 
     if newly_added_lines_for_temp_md: # Check if there are any lines to append
         temp_md_path = unindexed_md_path.parent / "temp index.md"
