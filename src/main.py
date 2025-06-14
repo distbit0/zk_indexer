@@ -244,7 +244,7 @@ def _update_unindexed_md_file(unindexed_md_path: Path, current_unindexed_normali
         _prepare_final_unindexed_content(preserved_lines, kept_normalized_notes, current_unindexed_normalized, all_notes_data)
 
     if newly_added_lines_for_temp_md: # Check if there are any lines to append
-        temp_md_path = unindexed_md_path.parent / "temp index.md"
+        temp_md_path = unindexed_md_path / "temp index.md"
         _append_lines_to_file(temp_md_path, newly_added_lines_for_temp_md)
 
 
@@ -331,7 +331,7 @@ def main():
     # Phase 3: Determine unindexed notes and update unindexed.md
     logger.info("Starting Phase 3: Determining unindexed notes and updating unindexed.md.")
     unindexed_notes_normalized = _determine_unindexed_notes(all_normalized_note_names_set, notes_linked_from_indices_normalized)
-    unindexed_md_path = zk_path / "unindexed.md"
+    unindexed_md_path = zk_path
     _update_unindexed_md_file(unindexed_md_path, unindexed_notes_normalized, all_notes_data)
 
     # Phase 4: Ensure index files are tagged
