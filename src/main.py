@@ -345,6 +345,5 @@ if __name__ == "__main__":
     # Initialize logger
     logger.remove() # Remove default handler
     logger.add(lambda msg: print(msg, end=''), format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}") # Basic console logger
-    logger.add("debug.log", rotation="10 MB", level="DEBUG") # Log to a file
     logger.info("Starting Zettelkasten Indexer Script")
     main()
